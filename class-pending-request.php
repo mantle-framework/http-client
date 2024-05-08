@@ -22,29 +22,21 @@ class Pending_Request {
 
 	/**
 	 * Base URL for the request.
-	 *
-	 * @var string
 	 */
 	protected string $base_url = '';
 
 	/**
 	 * Method for the request.
-	 *
-	 * @var string
 	 */
 	public string $method;
 
 	/**
 	 * URL for the request.
-	 *
-	 * @var string
 	 */
 	protected string $url;
 
 	/**
 	 * Options for the request.
-	 *
-	 * @var array
 	 */
 	protected array $options = [];
 
@@ -57,29 +49,21 @@ class Pending_Request {
 
 	/**
 	 * Pending files for the request.
-	 *
-	 * @var array
 	 */
 	protected array $pending_files = [];
 
 	/**
 	 * Body format.
-	 *
-	 * @var string
 	 */
 	protected string $body_format;
 
 	/**
 	 * Middleware for the request.
-	 *
-	 * @var array
 	 */
 	protected array $middleware = [];
 
 	/**
 	 * Flag if the request is for a pooled request.
-	 *
-	 * @var bool
 	 */
 	protected bool $pooled = false;
 
@@ -196,7 +180,6 @@ class Pending_Request {
 	 *
 	 * @param array $options Options for the request.
 	 * @param bool  $merge Merge the options with the existing options, default true.
-	 * @return static
 	 */
 	public function with_options( array $options, bool $merge = true ): static {
 		if ( $merge ) {
@@ -286,8 +269,6 @@ class Pending_Request {
 
 	/**
 	 * Retrieve the headers for the request.
-	 *
-	 * @return array
 	 */
 	public function headers(): array {
 		return $this->options['headers'] ?? [];
@@ -620,8 +601,8 @@ class Pending_Request {
 		$this->method  = $method;
 
 		// Ensure some options are always set.
-		$this->options['throw_exception'] = $this->options['throw_exception'] ?? false;
-		$this->options['retry']           = max( 1, $this->options['retry'] ?? 1 );
+		$this->options['throw_exception'] ??= false;
+		$this->options['retry']             = max( 1, $this->options['retry'] ?? 1 );
 
 		$this->prepare_request_url();
 
@@ -687,8 +668,6 @@ class Pending_Request {
 
 	/**
 	 * Prepare the request URL.
-	 *
-	 * @return void
 	 */
 	protected function prepare_request_url(): void {
 		if ( isset( $this->options['query'] ) ) {
@@ -703,8 +682,6 @@ class Pending_Request {
 
 	/**
 	 * Prepare the request arguments to pass to `wp_remote_request()`.
-	 *
-	 * @return array
 	 */
 	public function get_request_args(): array {
 		if ( isset( $this->options[ $this->body_format ] ) ) {
