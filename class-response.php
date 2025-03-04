@@ -15,7 +15,6 @@ use Mantle\Support\Traits\Macroable;
 use SimpleXMLElement;
 use WP_Error;
 use WP_Http_Cookie;
-use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
 
 use function Mantle\Support\Helpers\collect;
 use function Mantle\Support\Helpers\data_get;
@@ -27,25 +26,33 @@ class Response implements ArrayAccess {
 	use Macroable;
 
 	/**
-	 * The decoded JSON response.
+	 * Raw response from `wp_remote_request()`.
+	 *
+	 * @var array
 	 */
-	protected ?array $decoded = null;
+	protected array $response;
+
+	/**
+	 * The decoded JSON response.
+	 *
+	 * @var array|null
+	 */
+	protected ?array $decoded;
 
 	/**
 	 * The decoded XML Element response.
+	 *
+	 * @var SimpleXMLElement|null
 	 */
-	protected ?SimpleXMLElement $element = null;
+	protected ?SimpleXMLElement $element;
 
 	/**
 	 * Constructor.
 	 *
 	 * @param array $response Raw response from `wp_remote_request()`.
 	 */
-	public function __construct( protected array $response ) {
-		// Serialize the headers from a CaseInsensitiveDictionary to an array.
-		if ( isset( $this->response['headers'] ) && $this->response['headers'] instanceof CaseInsensitiveDictionary ) {
-			$this->response['headers'] = $this->response['headers']->getAll();
-		}
+	public function __construct( array $response ) {
+		$this->response = $response;
 
 		// Format the headers to be lower-case.
 		$this->response['headers'] = array_change_key_case( (array) ( $this->response['headers'] ?? [] ) );
@@ -54,15 +61,18 @@ class Response implements ArrayAccess {
 	/**
 	 * Create a response object from a `wp_remote_request()` response.
 	 *
+	 * @throws InvalidArgumentException If the response is not an array or WP_Error.
 	 * @param array|WP_Error $response Raw response from `wp_remote_request()`.
 	 * @return static
 	 */
 	public static function create( $response ) {
+		if ( is_array( $response ) ) {
+			return new static( $response );
+		}
+
 		if ( $response instanceof WP_Error ) {
 			return static::create_from_wp_error( $response );
 		}
-
-		return new static( $response );
 	}
 
 	/**
@@ -86,6 +96,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Retrieve the raw response from `wp_remote_request()`.
+	 *
+	 * @return array
 	 */
 	public function response(): array {
 		return $this->response;
@@ -93,6 +105,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Retrieve all the headers from a response.
+	 *
+	 * @return array
 	 */
 	public function headers(): array {
 		return (array) ( $this->response['headers'] ?? [] );
@@ -111,6 +125,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Retrieve the status code for the response.
+	 *
+	 * @return int
 	 */
 	public function status(): int {
 		return (int) ( $this->response['response']['code'] ?? 0 );
@@ -118,34 +134,44 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Determine if the request was successful.
+	 *
+	 * @return bool
 	 */
-	public function successful(): bool {
+	public function successful() {
 		return $this->status() >= 200 && $this->status() < 300;
 	}
 
 	/**
 	 * Determine if the response code was "OK".
+	 *
+	 * @return bool
 	 */
-	public function ok(): bool {
+	public function ok() {
 		return $this->status() === 200;
 	}
 
 	/**
 	 * Determine if the response code was not found (404).
+	 *
+	 * @return bool
 	 */
-	public function not_found(): bool {
+	public function not_found() {
 		return $this->status() === 404;
 	}
 
 	/**
 	 * Determine if the response was a redirect.
+	 *
+	 * @return bool
 	 */
-	public function redirect(): bool {
+	public function redirect() {
 		return $this->status() >= 300 && $this->status() < 400;
 	}
 
 	/**
 	 * Determine if the response was a 401 "Unauthorized" response.
+	 *
+	 * @return bool
 	 */
 	public function unauthorized(): bool {
 		return $this->status() === 401;
@@ -153,6 +179,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Determine if the response was a 403 "Forbidden" response.
+	 *
+	 * @return bool
 	 */
 	public function forbidden(): bool {
 		return $this->status() === 403;
@@ -160,6 +188,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Determine if the response indicates a client or server error occurred.
+	 *
+	 * @return bool
 	 */
 	public function failed(): bool {
 		return $this->server_error() || $this->client_error() || $this->is_wp_error();
@@ -167,6 +197,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Determine if the response indicates a client error occurred.
+	 *
+	 * @return bool
 	 */
 	public function client_error(): bool {
 		return $this->status() >= 400 && $this->status() < 500;
@@ -174,6 +206,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Determine if the response indicates a server error occurred.
+	 *
+	 * @return bool
 	 */
 	public function server_error(): bool {
 		return $this->status() >= 500;
@@ -181,6 +215,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Check if the error was an WP_Error.
+	 *
+	 * @return bool
 	 */
 	public function is_wp_error(): bool {
 		return ! empty( $this->response['is_wp_error'] );
@@ -188,9 +224,11 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Check if the response is JSON.
+	 *
+	 * @return bool
 	 */
 	public function is_json(): bool {
-		if ( false !== strpos( (string) $this->header( 'content-type' ), 'application/json' ) ) {
+		if ( false !== strpos( $this->header( 'content-type' ), 'application/json' ) ) {
 			return true;
 		}
 
@@ -200,27 +238,15 @@ class Response implements ArrayAccess {
 	/**
 	 * Check if the response is XML. Does not validate if the response is a valid
 	 * XML document.
+	 *
+	 * @return bool
 	 */
 	public function is_xml(): bool {
-		if ( false !== strpos( (string) $this->header( 'content-type' ), 'application/xml' ) ) {
+		if ( false !== strpos( $this->header( 'content-type' ), 'application/xml' ) ) {
 			return true;
 		}
 
-		return str_starts_with( trim( strtolower( $this->body() ) ), '<?xml' );
-	}
-
-	/**
-	 * Check if the response body is a file download (a Binary Large OBject).
-	 */
-	public function is_blob(): bool {
-		return false === mb_detect_encoding( $this->body(), 'UTF-8', true ) && ! ctype_print( $this->body() );
-	}
-
-	/**
-	 * Check if the response is a file download.
-	 */
-	public function is_file(): bool {
-		return ! empty( $this->response['filename'] ) && $this->is_blob();
+		return 0 === strpos( trim( strtolower( $this->body() ) ), '<?xml' );
 	}
 
 	/**
@@ -234,6 +260,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Retrieve the file path to the downloaded file.
+	 *
+	 * @return string|null
 	 */
 	public function file(): ?string {
 		return $this->response['filename'] ?? null;
@@ -241,6 +269,8 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Retrieve the file contents of the downloaded file.
+	 *
+	 * @return string|null
 	 */
 	public function file_contents(): ?string {
 		return ! empty( $this->response['filename'] ) ? file_get_contents( $this->file() ) : null; // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown
@@ -272,7 +302,7 @@ class Response implements ArrayAccess {
 	 * @param string $default Default value to return if the path does not exist.
 	 * @return SimpleXMLElement|string|null Returns a specific SimpleXMLElement if path is specified, otherwise the entire document.
 	 */
-	public function xml( ?string $xpath = null, $default = null ) {
+	public function xml( string $xpath = null, $default = null ) {
 		if ( ! isset( $this->element ) ) {
 			$previous = libxml_use_internal_errors( true );
 
@@ -321,6 +351,7 @@ class Response implements ArrayAccess {
 	 * Retrieve a specific cookie by name.
 	 *
 	 * @param string $name Cookie name.
+	 * @return WP_Http_Cookie|null
 	 */
 	public function cookie( string $name ): ?WP_Http_Cookie {
 		return collect( $this->cookies() )
@@ -340,8 +371,10 @@ class Response implements ArrayAccess {
 
 	/**
 	 * Dump the response to the screen and exit.
+	 *
+	 * @return void
 	 */
-	public function dd(): never {
+	public function dd() {
 		$this->dump();
 		exit( 1 );
 	}
@@ -350,6 +383,7 @@ class Response implements ArrayAccess {
 	 * Check if an attribute exists on the response.
 	 *
 	 * @param mixed $offset Offset to check.
+	 * @return bool
 	 */
 	public function offsetExists( mixed $offset ): bool {
 		if ( $this->is_xml() ) {
@@ -363,6 +397,7 @@ class Response implements ArrayAccess {
 	 * Retrieve an attribute from the response.
 	 *
 	 * @param mixed $offset Offset to get.
+	 * @return mixed
 	 */
 	public function offsetGet( mixed $offset ): mixed {
 		if ( $this->is_xml() ) {
@@ -379,6 +414,7 @@ class Response implements ArrayAccess {
 	 *
 	 * @param mixed $offset Offset.
 	 * @param mixed $value Value.
+	 * @return void
 	 */
 	public function offsetSet( mixed $offset, mixed $value ): void {
 		throw new LogicException( 'Response values are read-only.' );
@@ -389,6 +425,7 @@ class Response implements ArrayAccess {
 	 *
 	 * @throws LogicException Not supported on responses.
 	 * @param mixed $offset Offset.
+	 * @return void
 	 */
 	public function offsetUnset( mixed $offset ): void {
 		throw new LogicException( 'Response values are read-only.' );
