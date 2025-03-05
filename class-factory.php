@@ -20,9 +20,14 @@ class Factory {
 	}
 
 	/**
+	 * Create a new pending request.
+	 */
+	public static function create(): Pending_Request {
+		return ( new static() )->new_pending_request();
+	}
+
+	/**
 	 * Generate a new pending request.
-	 *
-	 * @return Pending_Request
 	 */
 	protected function new_pending_request(): Pending_Request {
 		return new Pending_Request();

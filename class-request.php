@@ -19,37 +19,18 @@ use function Mantle\Support\Helpers\data_get;
  */
 class Request {
 	/**
-	 * The request arguments.
-	 *
-	 * @var array
-	 */
-	protected array $args;
-
-	/**
-	 * The request URL.
-	 *
-	 * @var string
-	 */
-	protected string $url;
-
-	/**
 	 * Constructor
 	 *
 	 * @param array  $args Arguments of the request.
 	 * @param string $url  URL of the request.
 	 */
-	public function __construct( array $args, string $url ) {
-		$this->url  = $url;
-		$this->args = $args;
-
+	public function __construct( protected array $args, protected string $url ) {
 		// Format the headers to be lowercase.
 		$this->args['headers'] = array_change_key_case( $this->args['headers'] ?? [] );
 	}
 
 	/**
 	 * Retrieve the URL of the request.
-	 *
-	 * @return string
 	 */
 	public function url(): string {
 		return $this->url;
@@ -58,18 +39,22 @@ class Request {
 	/**
 	 * Retrieve the method of the request.
 	 * The method is always uppercase.
-	 *
-	 * @return string
 	 */
 	public function method(): string {
 		return strtoupper( $this->args['method'] ?? '' );
 	}
 
 	/**
+	 * Retrieve the enum method of the request.
+	 */
+	public function enum_method(): Http_Method {
+		return Http_Method::from( $this->method() );
+	}
+
+	/**
 	 * Check if the request has a set of headers.
 	 *
 	 * @param array $headers Headers to check for.
-	 * @return bool
 	 */
 	public function has_headers( array $headers ): bool {
 		foreach ( $headers as $key => $value ) {
@@ -112,11 +97,9 @@ class Request {
 
 	/**
 	 * Retrieve the body of the request.
-	 *
-	 * @return string
 	 */
-	public function body(): string {
-		return $this->args['body'] ?? '';
+	public function body(): ?string {
+		return $this->args['body'] ?? null;
 	}
 
 	/**
@@ -125,13 +108,11 @@ class Request {
 	 * @return array|null
 	 */
 	public function json() {
-		return json_decode( $this->body(), true );
+		return json_decode( (string) $this->body(), true );
 	}
 
 	/**
 	 * Determine if the request is simple form data.
-	 *
-	 * @return bool
 	 */
 	public function is_form(): bool {
 		return $this->has_header( 'Content-Type', 'application/x-www-form-urlencoded' );
@@ -139,8 +120,6 @@ class Request {
 
 	/**
 	 * Determine if the request is JSON.
-	 *
-	 * @return bool
 	 */
 	public function is_json(): bool {
 		return $this->has_header( 'Content-Type' )
@@ -169,10 +148,8 @@ class Request {
 
 	/**
 	 * Dump the request to the screen and die.
-	 *
-	 * @return void
 	 */
-	public function dd() {
+	public function dd(): never {
 		$this->dump();
 		exit( 1 );
 	}
