@@ -32,10 +32,11 @@ class Cache_Flexible_Middleware extends Cache_Middleware {
 	/**
 	 * Constructor.
 	 *
-	 * @param int|\DateInterval|\DateTimeInterface $stale Time to consider a cached response stale.
-	 * @param int|\DateInterval|\DateTimeInterface $expire Time to consider a cached response expired.
+	 * @param int|\DateInterval|\DateTimeInterface|\Closure $stale Time to consider a cached response stale.
+	 * @param int|\DateInterval|\DateTimeInterface|\Closure $expire Time to consider a cached response expired.
+	 * @param string|null                                   $key Cache key to use.
 	 */
-	public function __construct( protected int|\DateInterval|\DateTimeInterface $stale, protected int|\DateInterval|\DateTimeInterface $expire ) {}
+	public function __construct( protected int|\DateInterval|\DateTimeInterface|\Closure $stale, protected int|\DateInterval|\DateTimeInterface|\Closure $expire, public readonly ?string $key = null ) {}
 
 	/**
 	 * Invoke the middleware.
@@ -44,6 +45,7 @@ class Cache_Flexible_Middleware extends Cache_Middleware {
 	 * @param Closure         $next Next middleware in the stack.
 	 * @return Response Response from the request.
 	 */
+	#[\Override]
 	public function __invoke( Pending_Request $request, Closure $next ): Response {
 		$this->cache_key = $this->get_cache_key( $request );
 
@@ -52,32 +54,53 @@ class Cache_Flexible_Middleware extends Cache_Middleware {
 		if ( $cache instanceof SWR_Storage && $cache->value instanceof Response ) {
 			$response = $cache->value;
 
+			$is_stale = $cache->is_stale();
+
 			// If the cache is stale, we can still return it, but we should refresh
 			// deferred to the end of the request.
-			if ( $cache->is_stale() ) {
+			if ( $is_stale ) {
 				$fresh_request = ( clone $request )->without_middleware( Cache_Middleware::class );
 
-				defer( fn () => $this->store_response( $fresh_request->send() ) );
+				defer(
+					fn () => $this->store_response( $fresh_request, $fresh_request->send() ),
+				);
 			}
 
-			$response->cached = true;
+			$response->cached = $is_stale ? Cache_Status::STALE : Cache_Status::FRESH;
+
+			/**
+			 * Fires when a cached HTTP response is retrieved.
+			 *
+			 * @param Pending_Request $request The HTTP request.
+			 * @param Response        $cache   The cached response.
+			 * @param string          $cache_key The cache key used.
+			 */
+			do_action( 'mantle_http_client_cache_hit', $request, $response, $this->cache_key );
 
 			return $response;
 		}
 
 		$response = $next( $request );
 
+		$response->cached = Cache_Status::CACHED;
+
+		/**
+		 * Fires when a HTTP response is cached.
+		 *
+		 * @param Pending_Request $request The HTTP request.
+		 * @param Response        $response   The cached response.
+		 */
+		do_action( 'mantle_http_client_cached', $request, $response );
+
 		assert( $response instanceof Response );
 
-		$this->store_response( $response );
+		$this->store_response( request: $request, response: $response );
 
 		return $response;
 	}
 
 	/**
 	 * Retrieve a cached response if available.
-	 *
-	 * @return SWR_Storage|null Cached response or null if not found.
 	 */
 	private function get_cached_response(): ?SWR_Storage {
 		try {
@@ -98,9 +121,18 @@ class Cache_Flexible_Middleware extends Cache_Middleware {
 	 *
 	 * @throws \InvalidArgumentException If the stale time is not less than the expire time.
 	 *
-	 * @param Response $response Response to store.
+	 * @param Pending_Request $request Request associated with the response.
+	 * @param Response        $response Response to store.
 	 */
-	private function store_response( Response $response ): bool {
+	private function store_response( Pending_Request $request, Response $response ): bool {
+		if ( $this->stale instanceof Closure ) {
+			$this->stale = $this->invoke_expiration_callback( $this->stale, $request, $response );
+		}
+
+		if ( $this->expire instanceof Closure ) {
+			$this->expire = $this->invoke_expiration_callback( $this->expire, $request, $response );
+		}
+
 		$stale_time  = normalize_cache_ttl( $this->stale );
 		$expire_time = normalize_cache_ttl( $this->expire );
 
